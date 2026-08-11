@@ -141,3 +141,4 @@ src/
   data/mockData.ts     Public-site marketing content only (no portal data)
 server.cjs             Optional .xlsx export + email service
 ```
+# Trigger AI Studio sync 2026-08-11T06:10:58.0402224+01:00
