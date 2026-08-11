@@ -1,0 +1,6 @@
+{
+  "name": "Lindner International School",
+  "description": "The official website for Lindner International School featuring an administrative student profiles manager, an interactive events calendar, and a secure parent portal with personalized student dashboard to check results, grades, and attendance.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

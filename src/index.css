@@ -1,0 +1,35 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+/**
+ * Brand palette — navy + gold, matched to the official LIS crest.
+ * Defining these here (rather than scattering hex literals through every
+ * component) means the whole school's chrome updates from one place; these
+ * scales are what every bg-navy-500 or text-gold-400 class resolves to.
+ */
+@theme {
+  --font-sans: "Inter", sans-serif;
+
+  --color-navy-50: #eef3fb;
+  --color-navy-100: #dce7f6;
+  --color-navy-200: #b9ceec;
+  --color-navy-300: #8cacd9;
+  --color-navy-400: #5c82be;
+  --color-navy-500: #3a5f9e;
+  --color-navy-600: #1e4c8f;
+  --color-navy-700: #16305f;
+  --color-navy-800: #0e2247;
+  --color-navy-900: #081a38;
+  --color-navy-950: #050f22;
+
+  --color-gold-50: #fbf3de;
+  --color-gold-100: #f5e7be;
+  --color-gold-200: #ebd48f;
+  --color-gold-300: #dfbe66;
+  --color-gold-400: #c9a227;
+  --color-gold-500: #b8901f;
+  --color-gold-600: #9c7818;
+  --color-gold-700: #7a5c12;
+  --color-gold-800: #5c450e;
+  --color-gold-900: #3d2e09;
+}

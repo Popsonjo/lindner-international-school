@@ -1,0 +1,13 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+.claude/
+
+# Generated registry workbooks. These contain student/parent and staff PII and
+# must never be committed.
+exports/
