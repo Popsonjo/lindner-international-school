@@ -139,6 +139,19 @@ create policy "students_admin_write"
   using (public.current_role() = 'admin')
   with check (public.current_role() = 'admin');
 
+-- Parents otherwise have no write access at all (admin_write above is
+-- admin-only) — this narrow addition lets a parent update ONLY avatar_path
+-- on their own linked child, for the photo-upload feature. The column GRANT
+-- is what actually blocks them from touching any other column; the policy
+-- alone only controls which rows, not which columns.
+grant update (avatar_path) on public.students to authenticated;
+
+drop policy if exists "students_parent_avatar_write" on public.students;
+create policy "students_parent_avatar_write"
+  on public.students for update
+  using (parent_user_id = auth.uid())
+  with check (parent_user_id = auth.uid());
+
 -- ---------------------------------------------------------------------------
 -- grades — one row per grade; `grade` letter is always derived from `score`,
 -- mirroring src/lib/grading.ts's letterForScore so it can never drift.
