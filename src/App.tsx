@@ -21,6 +21,7 @@ import {
   rejectApplication,
   submitApplication,
   updateStudentRemarks,
+  uploadStudentAvatar,
 } from './lib/api';
 import HeaderNav from './components/HeaderNav';
 import HomeSection from './components/HomeSection';
@@ -187,6 +188,11 @@ export default function App() {
     setStudents(prev => prev.filter(s => s.id !== studentId));
   }, []);
 
+  const handleUploadAvatar = useCallback(async (studentId: string, file: File): Promise<void> => {
+    const signedUrl = await uploadStudentAvatar(studentId, file);
+    setStudents(prev => prev.map(s => (s.id === studentId ? { ...s, avatarUrl: signedUrl } : s)));
+  }, []);
+
   // Events mutations
   const handleAddNewEvent = useCallback(async (newEvent: Omit<SchoolEvent, 'id'>): Promise<void> => {
     const created = await addEvent(newEvent);
@@ -284,6 +290,7 @@ export default function App() {
                     onLogout={handlePortalLogout}
                     ownApplication={applications.length > 0 ? applications[applications.length - 1] : null}
                     onSubmitApplication={handleSubmitApplication}
+                    onUploadAvatar={handleUploadAvatar}
                   />
                 }
               />

@@ -42,7 +42,7 @@ export default function HomeSection() {
 
           <div className="flex flex-col sm:flex-row gap-3 pt-4">
             <Link
-              to="/admissions"
+              to="/parent-portal?signup=1"
               className="px-6 py-3.5 bg-gold-400 hover:bg-gold-500 text-navy-950 rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all duration-200 flex items-center justify-center gap-2 text-sm sm:text-base group"
             >
               <span>Apply Now</span>

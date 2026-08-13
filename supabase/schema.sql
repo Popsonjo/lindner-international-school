@@ -352,3 +352,78 @@ end;
 $$;
 
 grant execute on function public.approve_application(uuid, text, text, text, int, text) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Student avatar uploads — a private Storage bucket, not a public one.
+-- These are photos of children; access is scoped exactly like the students
+-- table itself (admin, the linked parent, or an assigned teacher), via
+-- Storage's own RLS on storage.objects. Files are stored at
+-- "<student_id>/<filename>", so the first path segment is used to check
+-- who's allowed to read/write it.
+-- ---------------------------------------------------------------------------
+alter table public.students add column if not exists avatar_path text;
+
+insert into storage.buckets (id, name, public)
+values ('student-avatars', 'student-avatars', false)
+on conflict (id) do nothing;
+
+drop policy if exists "avatar_select_scoped" on storage.objects;
+create policy "avatar_select_scoped"
+  on storage.objects for select
+  using (
+    bucket_id = 'student-avatars' and (
+      public.current_role() = 'admin'
+      or exists (
+        select 1 from public.students s
+        where s.id::text = (storage.foldername(name))[1]
+          and s.parent_user_id = auth.uid()
+      )
+      or exists (
+        select 1 from public.teacher_students ts
+        where ts.student_id::text = (storage.foldername(name))[1]
+          and ts.teacher_user_id = auth.uid()
+      )
+    )
+  );
+
+drop policy if exists "avatar_write_own_or_admin" on storage.objects;
+create policy "avatar_write_own_or_admin"
+  on storage.objects for insert
+  with check (
+    bucket_id = 'student-avatars' and (
+      public.current_role() = 'admin'
+      or exists (
+        select 1 from public.students s
+        where s.id::text = (storage.foldername(name))[1]
+          and s.parent_user_id = auth.uid()
+      )
+    )
+  );
+
+drop policy if exists "avatar_update_own_or_admin" on storage.objects;
+create policy "avatar_update_own_or_admin"
+  on storage.objects for update
+  using (
+    bucket_id = 'student-avatars' and (
+      public.current_role() = 'admin'
+      or exists (
+        select 1 from public.students s
+        where s.id::text = (storage.foldername(name))[1]
+          and s.parent_user_id = auth.uid()
+      )
+    )
+  );
+
+drop policy if exists "avatar_delete_own_or_admin" on storage.objects;
+create policy "avatar_delete_own_or_admin"
+  on storage.objects for delete
+  using (
+    bucket_id = 'student-avatars' and (
+      public.current_role() = 'admin'
+      or exists (
+        select 1 from public.students s
+        where s.id::text = (storage.foldername(name))[1]
+          and s.parent_user_id = auth.uid()
+      )
+    )
+  );

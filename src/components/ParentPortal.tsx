@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
-  Key, Award, AlertTriangle, CheckCircle2, FileText,
+  Key, Award, AlertTriangle, CheckCircle2, FileText, Camera,
   UserCheck, MessageSquare, BookOpen, Send, Download, Sparkles
 } from 'lucide-react';
 import { AdmissionApplication, StudentProfile, PortalUser } from '../types';
@@ -25,6 +26,7 @@ interface ParentPortalProps {
     parentPhone: string;
     notes: string;
   }) => Promise<AdmissionApplication>;
+  onUploadAvatar: (studentId: string, file: File) => Promise<void>;
 }
 
 const STANDING_STYLES: Record<StudentProfile['generalStatus'], { badge: string; label: string }> = {
@@ -35,9 +37,17 @@ const STANDING_STYLES: Record<StudentProfile['generalStatus'], { badge: string; 
 };
 
 export default function ParentPortal({
-  students, user, onLogin, onSignUp, onLogout, ownApplication, onSubmitApplication,
+  students, user, onLogin, onSignUp, onLogout, ownApplication, onSubmitApplication, onUploadAvatar,
 }: ParentPortalProps) {
-  const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
+  const [searchParams] = useSearchParams();
+  // "Apply Now" on the homepage links here with ?signup=1 so prospective
+  // families land straight on the account-creation tab instead of Sign In.
+  const [authMode, setAuthMode] = useState<'signin' | 'signup'>(
+    searchParams.get('signup') ? 'signup' : 'signin',
+  );
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const [avatarBusy, setAvatarBusy] = useState(false);
+  const [avatarError, setAvatarError] = useState('');
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
@@ -194,6 +204,22 @@ export default function ParentPortal({
 
   const handlePrint = () => {
     window.print();
+  };
+
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // allow re-selecting the same file next time
+    if (!file || !activeStudent) return;
+
+    setAvatarBusy(true);
+    setAvatarError('');
+    try {
+      await onUploadAvatar(activeStudent.id, file);
+    } catch (err) {
+      setAvatarError(err instanceof Error ? err.message : 'Could not upload that photo.');
+    } finally {
+      setAvatarBusy(false);
+    }
   };
 
   // Signed in, but not yet linked to a student — either applying for
@@ -479,11 +505,37 @@ export default function ParentPortal({
         <div className={`absolute top-0 right-0 w-2 h-full bg-gradient-to-b ${houseConfig.color.split(' ')[0]}`}></div>
         
         <div className="flex flex-col sm:flex-row items-center gap-6">
+          <div className="relative shrink-0 print:hidden">
+            <img
+              src={activeStudent.avatarUrl}
+              alt={activeStudent.name}
+              referrerPolicy="no-referrer"
+              className="w-24 h-24 rounded-2xl object-cover shadow-md border-4 border-slate-50"
+            />
+            <button
+              type="button"
+              onClick={() => avatarInputRef.current?.click()}
+              disabled={avatarBusy}
+              title="Upload a photo"
+              aria-label="Upload a photo of your child"
+              className="absolute -bottom-1.5 -right-1.5 w-8 h-8 rounded-full bg-navy-700 hover:bg-navy-600 text-white flex items-center justify-center shadow-md border-2 border-white disabled:opacity-60"
+            >
+              <Camera className="w-3.5 h-3.5" />
+            </button>
+            <input
+              ref={avatarInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleAvatarChange}
+              className="hidden"
+            />
+          </div>
+          {/* Print-only static image — the upload button/overlay above is hidden when printing. */}
           <img
             src={activeStudent.avatarUrl}
             alt={activeStudent.name}
             referrerPolicy="no-referrer"
-            className="w-24 h-24 rounded-2xl object-cover shadow-md border-4 border-slate-50 shrink-0"
+            className="hidden print:block w-24 h-24 rounded-2xl object-cover shadow-md border-4 border-slate-50 shrink-0"
           />
           <div className="text-center sm:text-left space-y-1.5">
             <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
@@ -523,6 +575,13 @@ export default function ParentPortal({
           </button>
         </div>
       </section>
+
+      {avatarError && (
+        <div role="alert" className="bg-rose-50 border border-rose-100 text-rose-800 p-3 rounded-xl text-xs flex items-start gap-2 print:hidden">
+          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+          <span>{avatarError}</span>
+        </div>
+      )}
 
       {/* Numerical Metrics Dashboard */}
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">

@@ -33,6 +33,7 @@ interface StudentRow {
   parent_email: string;
   parent_user_id: string | null;
   avatar_url: string;
+  avatar_path: string | null;
   clubs: string[];
   teacher_remarks: string;
   general_status: StudentProfile['generalStatus'];
@@ -42,6 +43,10 @@ interface StudentRow {
   attendance_unexcused: number;
   grades?: GradeRow[];
 }
+
+/** Private bucket — see supabase/schema.sql for the RLS scoping this relies on. */
+const AVATAR_BUCKET = 'student-avatars';
+const AVATAR_SIGNED_URL_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days
 
 function mapGrade(row: GradeRow): GradeRecord {
   return {
@@ -90,7 +95,60 @@ export async function fetchStudents(): Promise<StudentProfile[]> {
     .select('*, grades(*)')
     .order('roll_number', { ascending: true });
   if (error) throw error;
-  return ((data ?? []) as StudentRow[]).map(mapStudent);
+  const rows = (data ?? []) as StudentRow[];
+  const students = rows.map(mapStudent);
+
+  // The bucket is private, so a plain public URL never works — a signed URL
+  // has to be minted per-request for whichever rows RLS actually let through.
+  const withUpload = rows
+    .map((row, idx) => ({ row, idx }))
+    .filter(({ row }) => row.avatar_path);
+  if (withUpload.length > 0) {
+    const signed = await Promise.all(
+      withUpload.map(({ row }) =>
+        supabase.storage.from(AVATAR_BUCKET).createSignedUrl(row.avatar_path as string, AVATAR_SIGNED_URL_TTL_SECONDS),
+      ),
+    );
+    signed.forEach((result, i) => {
+      const url = result.data?.signedUrl;
+      if (url) students[withUpload[i].idx].avatarUrl = url;
+    });
+  }
+
+  return students;
+}
+
+/** Uploads a new photo for a student, replacing any previous one, and
+ *  returns a signed URL ready to display immediately. */
+export async function uploadStudentAvatar(studentId: string, file: File): Promise<string> {
+  const MAX_BYTES = 5 * 1024 * 1024;
+  if (!file.type.startsWith('image/')) {
+    throw new Error('Please choose an image file (JPG, PNG, etc.).');
+  }
+  if (file.size > MAX_BYTES) {
+    throw new Error('That image is too large — please choose one under 5MB.');
+  }
+
+  const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+  const path = `${studentId}/avatar.${ext}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from(AVATAR_BUCKET)
+    .upload(path, file, { upsert: true, contentType: file.type });
+  if (uploadError) throw uploadError;
+
+  const { error: updateError } = await supabase
+    .from('students')
+    .update({ avatar_path: path })
+    .eq('id', studentId);
+  if (updateError) throw updateError;
+
+  const { data: signedData, error: signError } = await supabase.storage
+    .from(AVATAR_BUCKET)
+    .createSignedUrl(path, AVATAR_SIGNED_URL_TTL_SECONDS);
+  if (signError) throw signError;
+
+  return signedData.signedUrl;
 }
 
 /**
