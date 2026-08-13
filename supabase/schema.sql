@@ -388,12 +388,12 @@ create policy "avatar_select_scoped"
       public.current_role() = 'admin'
       or exists (
         select 1 from public.students s
-        where s.id::text = (storage.foldername(name))[1]
+        where s.id::text = (storage.foldername(storage.objects.name))[1]
           and s.parent_user_id = auth.uid()
       )
       or exists (
         select 1 from public.teacher_students ts
-        where ts.student_id::text = (storage.foldername(name))[1]
+        where ts.student_id::text = (storage.foldername(storage.objects.name))[1]
           and ts.teacher_user_id = auth.uid()
       )
     )
@@ -407,7 +407,7 @@ create policy "avatar_write_own_or_admin"
       public.current_role() = 'admin'
       or exists (
         select 1 from public.students s
-        where s.id::text = (storage.foldername(name))[1]
+        where s.id::text = (storage.foldername(storage.objects.name))[1]
           and s.parent_user_id = auth.uid()
       )
     )
@@ -421,7 +421,7 @@ create policy "avatar_update_own_or_admin"
       public.current_role() = 'admin'
       or exists (
         select 1 from public.students s
-        where s.id::text = (storage.foldername(name))[1]
+        where s.id::text = (storage.foldername(storage.objects.name))[1]
           and s.parent_user_id = auth.uid()
       )
     )
@@ -435,7 +435,7 @@ create policy "avatar_delete_own_or_admin"
       public.current_role() = 'admin'
       or exists (
         select 1 from public.students s
-        where s.id::text = (storage.foldername(name))[1]
+        where s.id::text = (storage.foldername(storage.objects.name))[1]
           and s.parent_user_id = auth.uid()
       )
     )
