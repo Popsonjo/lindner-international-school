@@ -18,14 +18,17 @@ interface ParentPortalProps {
   onLogout: () => void;
   /** Most recent application from this signed-in parent, if any. */
   ownApplication: AdmissionApplication | null;
-  onSubmitApplication: (input: {
-    childName: string;
-    dateOfBirth: string;
-    gradeApplyingFor: string;
-    parentName: string;
-    parentPhone: string;
-    notes: string;
-  }) => Promise<AdmissionApplication>;
+  onSubmitApplication: (
+    input: {
+      childName: string;
+      dateOfBirth: string;
+      gradeApplyingFor: string;
+      parentName: string;
+      parentPhone: string;
+      notes: string;
+    },
+    photoFile?: File | null,
+  ) => Promise<AdmissionApplication>;
   onUploadAvatar: (studentId: string, file: File) => Promise<void>;
 }
 
@@ -62,6 +65,8 @@ export default function ParentPortal({
   const [appParentName, setAppParentName] = useState('');
   const [appParentPhone, setAppParentPhone] = useState('');
   const [appNotes, setAppNotes] = useState('');
+  const [appPhoto, setAppPhoto] = useState<File | null>(null);
+  const [appPhotoPreview, setAppPhotoPreview] = useState('');
   const [appError, setAppError] = useState('');
   const [appBusy, setAppBusy] = useState(false);
   const [appSubmitted, setAppSubmitted] = useState(false);
@@ -163,14 +168,17 @@ export default function ParentPortal({
     setAppBusy(true);
     setAppError('');
     try {
-      await onSubmitApplication({
-        childName,
-        dateOfBirth: appDob,
-        gradeApplyingFor: appGrade,
-        parentName,
-        parentPhone,
-        notes: appNotes.trim(),
-      });
+      await onSubmitApplication(
+        {
+          childName,
+          dateOfBirth: appDob,
+          gradeApplyingFor: appGrade,
+          parentName,
+          parentPhone,
+          notes: appNotes.trim(),
+        },
+        appPhoto,
+      );
       setAppSubmitted(true);
     } catch (err) {
       setAppError(err instanceof Error ? err.message : 'Could not submit the application.');
@@ -178,6 +186,15 @@ export default function ParentPortal({
       setAppBusy(false);
     }
   };
+
+  const handleAppPhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null;
+    setAppPhoto(file);
+    setAppPhotoPreview(file ? URL.createObjectURL(file) : '');
+  };
+
+  // Revokes the previous preview URL whenever it changes, and on unmount.
+  useEffect(() => () => { if (appPhotoPreview) URL.revokeObjectURL(appPhotoPreview); }, [appPhotoPreview]);
 
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
@@ -345,6 +362,29 @@ export default function ParentPortal({
                       onChange={(e) => setAppNotes(e.target.value)}
                       className="w-full text-sm p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-1 focus:ring-navy-700"
                     />
+                  </div>
+
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <label htmlFor="app-photo" className="text-xs font-bold text-slate-700 block">Child's Photo (optional)</label>
+                    <div className="flex items-center gap-3">
+                      {appPhotoPreview && (
+                        <img
+                          src={appPhotoPreview}
+                          alt="Selected preview"
+                          className="w-14 h-14 rounded-xl object-cover border border-slate-200 shrink-0"
+                        />
+                      )}
+                      <input
+                        id="app-photo"
+                        type="file"
+                        accept="image/*"
+                        onChange={handleAppPhotoChange}
+                        className="w-full text-xs text-slate-600 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-navy-50 file:text-navy-700 hover:file:bg-navy-100"
+                      />
+                    </div>
+                    <p className="text-[10px] text-slate-400">
+                      Can also be added later once your child is enrolled. Max 5MB.
+                    </p>
                   </div>
                 </div>
 

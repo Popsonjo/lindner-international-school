@@ -201,15 +201,18 @@ export default function App() {
 
   // Admissions
   const handleSubmitApplication = useCallback(
-    async (input: {
-      childName: string;
-      dateOfBirth: string;
-      gradeApplyingFor: string;
-      parentName: string;
-      parentPhone: string;
-      notes: string;
-    }): Promise<AdmissionApplication> => {
-      const created = await submitApplication(input);
+    async (
+      input: {
+        childName: string;
+        dateOfBirth: string;
+        gradeApplyingFor: string;
+        parentName: string;
+        parentPhone: string;
+        notes: string;
+      },
+      photoFile?: File | null,
+    ): Promise<AdmissionApplication> => {
+      const created = await submitApplication(input, photoFile);
       setApplications(prev => [...prev, created]);
       return created;
     },

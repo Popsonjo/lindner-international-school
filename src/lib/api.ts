@@ -118,9 +118,13 @@ export async function fetchStudents(): Promise<StudentProfile[]> {
   return students;
 }
 
-/** Uploads a new photo for a student, replacing any previous one, and
- *  returns a signed URL ready to display immediately. */
-export async function uploadStudentAvatar(studentId: string, file: File): Promise<string> {
+function avatarFileExt(file: File): string {
+  return (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+}
+
+/** Shared by both upload entry points below — validates and uploads to a
+ *  given path, leaving the caller to update whichever row owns that path. */
+async function uploadAvatarFile(path: string, file: File): Promise<void> {
   const MAX_BYTES = 5 * 1024 * 1024;
   if (!file.type.startsWith('image/')) {
     throw new Error('Please choose an image file (JPG, PNG, etc.).');
@@ -128,14 +132,17 @@ export async function uploadStudentAvatar(studentId: string, file: File): Promis
   if (file.size > MAX_BYTES) {
     throw new Error('That image is too large — please choose one under 5MB.');
   }
-
-  const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
-  const path = `${studentId}/avatar.${ext}`;
-
-  const { error: uploadError } = await supabase.storage
+  const { error } = await supabase.storage
     .from(AVATAR_BUCKET)
     .upload(path, file, { upsert: true, contentType: file.type });
-  if (uploadError) throw uploadError;
+  if (error) throw error;
+}
+
+/** Uploads a new photo for an already-enrolled student, replacing any
+ *  previous one, and returns a signed URL ready to display immediately. */
+export async function uploadStudentAvatar(studentId: string, file: File): Promise<string> {
+  const path = `${studentId}/avatar.${avatarFileExt(file)}`;
+  await uploadAvatarFile(path, file);
 
   const { error: updateError } = await supabase
     .from('students')
@@ -325,15 +332,21 @@ function mapApplication(row: ApplicationRow): AdmissionApplication {
 }
 
 /** Submitted by a signed-up parent whose account didn't auto-link to an
- *  existing student — this is how prospective families apply. */
-export async function submitApplication(input: {
-  childName: string;
-  dateOfBirth: string;
-  gradeApplyingFor: string;
-  parentName: string;
-  parentPhone: string;
-  notes: string;
-}): Promise<AdmissionApplication> {
+ *  existing student — this is how prospective families apply. The photo is
+ *  optional and, if given, uploaded to an application-scoped path; it's
+ *  moved over to the real student's path automatically once an admin
+ *  approves the application (see approve_application() in schema.sql). */
+export async function submitApplication(
+  input: {
+    childName: string;
+    dateOfBirth: string;
+    gradeApplyingFor: string;
+    parentName: string;
+    parentPhone: string;
+    notes: string;
+  },
+  photoFile?: File | null,
+): Promise<AdmissionApplication> {
   const { data: userData } = await supabase.auth.getUser();
   const userId = userData.user?.id;
   if (!userId) throw new Error('You must be signed in to apply.');
@@ -352,7 +365,21 @@ export async function submitApplication(input: {
     .select()
     .single();
   if (error) throw error;
-  return mapApplication(data as ApplicationRow);
+  const created = mapApplication(data as ApplicationRow);
+
+  if (photoFile) {
+    // The application itself is already submitted at this point — a failed
+    // photo upload shouldn't roll that back, just surface as its own error.
+    const path = `applications/${created.id}/avatar.${avatarFileExt(photoFile)}`;
+    await uploadAvatarFile(path, photoFile);
+    const { error: updateError } = await supabase
+      .from('admission_applications')
+      .update({ avatar_path: path })
+      .eq('id', created.id);
+    if (updateError) throw updateError;
+  }
+
+  return created;
 }
 
 /**

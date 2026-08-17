@@ -286,6 +286,7 @@ create table if not exists public.admission_applications (
   notes text not null default '',
   status text not null default 'submitted' check (status in ('submitted', 'under_review', 'accepted', 'rejected')),
   created_student_id uuid references public.students(id) on delete set null,
+  avatar_path text,
   submitted_at timestamptz not null default now(),
   reviewed_by uuid references auth.users(id) on delete set null,
   reviewed_at timestamptz
@@ -310,6 +311,17 @@ create policy "applications_admin_write"
   using (public.current_role() = 'admin')
   with check (public.current_role() = 'admin');
 
+-- Narrow addition, same pattern as students.avatar_path: the applicant may
+-- update ONLY avatar_path on their own submission (the column GRANT is what
+-- actually blocks every other column, not the policy alone).
+grant update (avatar_path) on public.admission_applications to authenticated;
+
+drop policy if exists "applications_owner_avatar_write" on public.admission_applications;
+create policy "applications_owner_avatar_write"
+  on public.admission_applications for update
+  using (applicant_user_id = auth.uid())
+  with check (applicant_user_id = auth.uid());
+
 -- Accepting an application creates the real student record (admin confirms
 -- the official grade/classroom/house/roll number — not whatever the
 -- applicant requested) and links it straight to the applicant's own account,
@@ -332,6 +344,7 @@ declare
   v_app public.admission_applications%rowtype;
   v_parent_email text;
   v_student_id uuid;
+  v_new_avatar_path text;
 begin
   if public.current_role() <> 'admin' then
     raise exception 'Only administrators may approve applications.';
@@ -355,6 +368,17 @@ begin
     current_date, p_house, v_app.parent_name, coalesce(v_parent_email, ''), v_app.applicant_user_id
   )
   returning id into v_student_id;
+
+  -- Carry the applicant's uploaded photo over by moving the storage object
+  -- itself (same bucket, new path) rather than re-uploading a second copy.
+  if v_app.avatar_path is not null then
+    v_new_avatar_path := v_student_id::text || '/avatar' || substring(v_app.avatar_path from '\.[^.]*$');
+    update storage.objects
+    set name = v_new_avatar_path
+    where bucket_id = 'student-avatars' and name = v_app.avatar_path;
+
+    update public.students set avatar_path = v_new_avatar_path where id = v_student_id;
+  end if;
 
   update public.admission_applications
   set status = 'accepted', reviewed_by = auth.uid(), reviewed_at = now(), created_student_id = v_student_id
@@ -380,6 +404,9 @@ insert into storage.buckets (id, name, public)
 values ('student-avatars', 'student-avatars', false)
 on conflict (id) do nothing;
 
+-- Applications store their (pre-enrollment) photo at
+-- "applications/<application_id>/...", distinguishable from a student's
+-- "<student_id>/..." by that literal first segment.
 drop policy if exists "avatar_select_scoped" on storage.objects;
 create policy "avatar_select_scoped"
   on storage.objects for select
@@ -396,6 +423,12 @@ create policy "avatar_select_scoped"
         where ts.student_id::text = (storage.foldername(storage.objects.name))[1]
           and ts.teacher_user_id = auth.uid()
       )
+      or exists (
+        select 1 from public.admission_applications a
+        where (storage.foldername(storage.objects.name))[1] = 'applications'
+          and a.id::text = (storage.foldername(storage.objects.name))[2]
+          and a.applicant_user_id = auth.uid()
+      )
     )
   );
 
@@ -410,6 +443,12 @@ create policy "avatar_write_own_or_admin"
         where s.id::text = (storage.foldername(storage.objects.name))[1]
           and s.parent_user_id = auth.uid()
       )
+      or exists (
+        select 1 from public.admission_applications a
+        where (storage.foldername(storage.objects.name))[1] = 'applications'
+          and a.id::text = (storage.foldername(storage.objects.name))[2]
+          and a.applicant_user_id = auth.uid()
+      )
     )
   );
 
@@ -423,6 +462,12 @@ create policy "avatar_update_own_or_admin"
         select 1 from public.students s
         where s.id::text = (storage.foldername(storage.objects.name))[1]
           and s.parent_user_id = auth.uid()
+      )
+      or exists (
+        select 1 from public.admission_applications a
+        where (storage.foldername(storage.objects.name))[1] = 'applications'
+          and a.id::text = (storage.foldername(storage.objects.name))[2]
+          and a.applicant_user_id = auth.uid()
       )
     )
   );
