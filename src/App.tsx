@@ -208,7 +208,7 @@ export default function App() {
   const handleUpdateTeacherAssignment = useCallback(
     async (
       teacherId: string,
-      input: { level: 'primary' | 'secondary'; classroom?: string; subject?: string; studentIds?: string[] },
+      input: { level: 'primary' | 'secondary'; classroom?: string; subject?: string; classrooms?: string[] },
     ): Promise<void> => {
       const assignedStudentIds = await updateTeacherAssignment(teacherId, input);
       setTeachers(prev =>
@@ -220,6 +220,7 @@ export default function App() {
                 teachingLevel: input.level,
                 teachingClass: input.level === 'primary' ? (input.classroom ?? null) : null,
                 teachingSubject: input.level === 'secondary' ? (input.subject ?? null) : null,
+                teachingClasses: input.level === 'secondary' ? (input.classrooms ?? []) : [],
               }
             : t,
         ),

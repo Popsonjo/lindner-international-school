@@ -168,7 +168,7 @@ export async function fetchTeachers(): Promise<TeacherProfile[]> {
   const [{ data: profiles, error: profileErr }, { data: links, error: linkErr }] = await Promise.all([
     supabase
       .from('profiles')
-      .select('id, full_name, teaching_level, teaching_class, teaching_subject')
+      .select('id, full_name, teaching_level, teaching_class, teaching_subject, teaching_classes')
       .eq('role', 'teacher'),
     supabase.from('teacher_students').select('teacher_user_id, student_id'),
   ]);
@@ -184,6 +184,7 @@ export async function fetchTeachers(): Promise<TeacherProfile[]> {
     teachingLevel: (p.teaching_level as TeacherProfile['teachingLevel']) ?? null,
     teachingClass: p.teaching_class ?? null,
     teachingSubject: p.teaching_subject ?? null,
+    teachingClasses: p.teaching_classes ?? [],
   }));
 }
 
@@ -197,9 +198,10 @@ export interface NewTeacherInput {
   classroom?: string;
   /** Required when level === 'secondary'. */
   subject?: string;
-  /** Required when level === 'secondary' — there's no single classroom to
-   *  derive the roster from, so admin picks students directly. */
-  studentIds?: string[];
+  /** Required when level === 'secondary'. A subject teacher (e.g. Chemistry)
+   *  often teaches several classes (e.g. SS1 and SS2), so every student in
+   *  ANY of these classrooms is auto-assigned. */
+  classrooms?: string[];
 }
 
 /**
@@ -235,6 +237,7 @@ export async function createTeacher(input: NewTeacherInput): Promise<TeacherProf
       teaching_level: input.level,
       teaching_class: input.level === 'primary' ? (input.classroom ?? null) : null,
       teaching_subject: input.level === 'secondary' ? (input.subject ?? null) : null,
+      teaching_classes: input.level === 'secondary' ? (input.classrooms ?? []) : [],
     })
     .eq('id', teacherId);
   if (profileError) throw profileError;
@@ -248,19 +251,20 @@ export async function createTeacher(input: NewTeacherInput): Promise<TeacherProf
     teachingLevel: input.level,
     teachingClass: input.level === 'primary' ? (input.classroom ?? null) : null,
     teachingSubject: input.level === 'secondary' ? (input.subject ?? null) : null,
+    teachingClasses: input.level === 'secondary' ? (input.classrooms ?? []) : [],
   };
 }
 
 async function assignTeacherStudents(
   teacherId: string,
-  input: { level: 'primary' | 'secondary'; classroom?: string; studentIds?: string[] },
+  input: { level: 'primary' | 'secondary'; classroom?: string; classrooms?: string[] },
 ): Promise<string[]> {
-  const studentIds =
-    input.level === 'primary'
-      ? ((await supabase.from('students').select('id').eq('classroom', input.classroom ?? '')).data ?? []).map(
-          (r) => r.id as string,
-        )
-      : input.studentIds ?? [];
+  const classroomFilter = input.level === 'primary' ? [input.classroom ?? ''] : input.classrooms ?? [];
+  if (classroomFilter.length === 0) return [];
+
+  const { data, error: fetchError } = await supabase.from('students').select('id').in('classroom', classroomFilter);
+  if (fetchError) throw fetchError;
+  const studentIds = (data ?? []).map((r) => r.id as string);
 
   if (studentIds.length > 0) {
     const { error } = await supabase
@@ -276,7 +280,7 @@ async function assignTeacherStudents(
  *  doesn't leave stale access behind. */
 export async function updateTeacherAssignment(
   teacherId: string,
-  input: { level: 'primary' | 'secondary'; classroom?: string; subject?: string; studentIds?: string[] },
+  input: { level: 'primary' | 'secondary'; classroom?: string; subject?: string; classrooms?: string[] },
 ): Promise<string[]> {
   const { error: profileError } = await supabase
     .from('profiles')
@@ -284,6 +288,7 @@ export async function updateTeacherAssignment(
       teaching_level: input.level,
       teaching_class: input.level === 'primary' ? (input.classroom ?? null) : null,
       teaching_subject: input.level === 'secondary' ? (input.subject ?? null) : null,
+      teaching_classes: input.level === 'secondary' ? (input.classrooms ?? []) : [],
     })
     .eq('id', teacherId);
   if (profileError) throw profileError;

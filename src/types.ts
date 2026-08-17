@@ -54,6 +54,7 @@ export interface TeacherProfile {
   teachingLevel: 'primary' | 'secondary' | null;
   teachingClass: string | null; // set when teachingLevel === 'primary'
   teachingSubject: string | null; // set when teachingLevel === 'secondary'
+  teachingClasses: string[]; // set when teachingLevel === 'secondary' — may span multiple classes
 }
 
 /**

@@ -10,12 +10,14 @@ create table if not exists public.profiles (
   role text not null default 'parent' check (role in ('admin', 'teacher', 'parent')),
   full_name text not null default '',
   -- Teacher-only metadata (null for admin/parent rows). "primary" teachers are
-  -- assigned a whole classroom; "secondary" teachers are assigned a subject
-  -- plus an explicit student list, since one subject doesn't map to a single
-  -- fixed classroom the way primary school does.
+  -- assigned one whole classroom (teaching_class); "secondary" teachers are
+  -- assigned a subject taught across one or more classes (teaching_classes),
+  -- since a subject teacher (e.g. Chemistry) often teaches several classes
+  -- (e.g. SS1 and SS2) rather than owning a single fixed classroom.
   teaching_level text check (teaching_level in ('primary', 'secondary')),
   teaching_class text,
   teaching_subject text,
+  teaching_classes text[] not null default '{}',
   created_at timestamptz not null default now()
 );
 
@@ -25,6 +27,7 @@ alter table public.profiles enable row level security;
 alter table public.profiles add column if not exists teaching_level text;
 alter table public.profiles add column if not exists teaching_class text;
 alter table public.profiles add column if not exists teaching_subject text;
+alter table public.profiles add column if not exists teaching_classes text[] not null default '{}';
 do $$
 begin
   if not exists (

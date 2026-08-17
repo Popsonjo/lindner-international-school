@@ -44,7 +44,7 @@ interface AdminPortalProps {
   onCreateTeacher: (input: NewTeacherInput) => Promise<TeacherProfile>;
   onUpdateTeacherAssignment: (
     teacherId: string,
-    input: { level: 'primary' | 'secondary'; classroom?: string; subject?: string; studentIds?: string[] },
+    input: { level: 'primary' | 'secondary'; classroom?: string; subject?: string; classrooms?: string[] },
   ) => Promise<void>;
 }
 

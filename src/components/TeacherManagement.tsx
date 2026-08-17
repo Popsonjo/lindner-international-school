@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { X, Users, UserPlus, Search, AlertTriangle, Pencil, GraduationCap } from 'lucide-react';
+import { X, Users, UserPlus, AlertTriangle, Pencil, GraduationCap } from 'lucide-react';
 import { StudentProfile, TeacherProfile } from '../types';
 import { NewTeacherInput } from '../lib/api';
 
@@ -10,7 +10,7 @@ interface TeacherManagementProps {
   onCreateTeacher: (input: NewTeacherInput) => Promise<TeacherProfile>;
   onUpdateTeacherAssignment: (
     teacherId: string,
-    input: { level: 'primary' | 'secondary'; classroom?: string; subject?: string; studentIds?: string[] },
+    input: { level: 'primary' | 'secondary'; classroom?: string; subject?: string; classrooms?: string[] },
   ) => Promise<void>;
 }
 
@@ -47,21 +47,12 @@ export default function TeacherManagement({
   const [level, setLevel] = useState<'primary' | 'secondary'>('primary');
   const [classroom, setClassroom] = useState('');
   const [subject, setSubject] = useState('');
-  const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
-  const [studentSearch, setStudentSearch] = useState('');
+  const [selectedClassrooms, setSelectedClassrooms] = useState<Set<string>>(new Set());
 
   const classroomOptions = useMemo(
     () => [...new Set(students.map((s) => s.classroom))].sort(),
     [students],
   );
-
-  const filteredStudents = useMemo(() => {
-    const q = studentSearch.trim().toLowerCase();
-    if (!q) return students;
-    return students.filter(
-      (s) => s.name.toLowerCase().includes(q) || s.studentId.toLowerCase().includes(q),
-    );
-  }, [students, studentSearch]);
 
   const resetForm = () => {
     setFullName('');
@@ -71,8 +62,7 @@ export default function TeacherManagement({
     setLevel('primary');
     setClassroom(classroomOptions[0] ?? '');
     setSubject('');
-    setSelectedStudentIds(new Set());
-    setStudentSearch('');
+    setSelectedClassrooms(new Set());
     setError('');
   };
 
@@ -98,17 +88,16 @@ export default function TeacherManagement({
     setLevel(teacher.teachingLevel ?? 'primary');
     setClassroom(teacher.teachingClass ?? classroomOptions[0] ?? '');
     setSubject(teacher.teachingSubject ?? '');
-    setSelectedStudentIds(new Set(teacher.assignedStudentIds));
-    setStudentSearch('');
+    setSelectedClassrooms(new Set(teacher.teachingClasses));
     setError('');
     setView({ edit: teacher.id });
   };
 
-  const toggleStudent = (id: string) => {
-    setSelectedStudentIds((prev) => {
+  const toggleClassroom = (c: string) => {
+    setSelectedClassrooms((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      if (next.has(c)) next.delete(c);
+      else next.add(c);
       return next;
     });
   };
@@ -137,7 +126,7 @@ export default function TeacherManagement({
         level,
         classroom: level === 'primary' ? classroom : undefined,
         subject: level === 'secondary' ? subject.trim() : undefined,
-        studentIds: level === 'secondary' ? [...selectedStudentIds] : undefined,
+        classrooms: level === 'secondary' ? [...selectedClassrooms] : undefined,
       });
       setView('list');
       resetForm();
@@ -165,7 +154,7 @@ export default function TeacherManagement({
         level,
         classroom: level === 'primary' ? classroom : undefined,
         subject: level === 'secondary' ? subject.trim() : undefined,
-        studentIds: level === 'secondary' ? [...selectedStudentIds] : undefined,
+        classrooms: level === 'secondary' ? [...selectedClassrooms] : undefined,
       });
       setView('list');
       resetForm();
@@ -236,35 +225,28 @@ export default function TeacherManagement({
           </div>
           <div className="space-y-1.5">
             <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block">
-              Students who take this subject ({selectedStudentIds.size} selected)
+              Classes taking this subject ({selectedClassrooms.size} selected)
             </label>
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-              <input
-                type="search"
-                value={studentSearch}
-                onChange={(e) => setStudentSearch(e.target.value)}
-                placeholder="Search students…"
-                className="w-full text-xs pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none"
-              />
-            </div>
-            <div className="max-h-40 overflow-y-auto border border-slate-200 rounded-lg divide-y divide-slate-100">
-              {filteredStudents.length === 0 && (
-                <p className="text-xs text-slate-400 italic p-3">No students match.</p>
-              )}
-              {filteredStudents.map((s) => (
-                <label key={s.id} className="flex items-center gap-2 px-3 py-2 text-xs cursor-pointer hover:bg-slate-50">
-                  <input
-                    type="checkbox"
-                    checked={selectedStudentIds.has(s.id)}
-                    onChange={() => toggleStudent(s.id)}
-                    className="accent-navy-700"
-                  />
-                  <span className="font-medium text-slate-700">{s.name}</span>
-                  <span className="text-slate-400 font-mono">{s.studentId}</span>
-                </label>
-              ))}
-            </div>
+            {classroomOptions.length > 0 ? (
+              <div className="max-h-40 overflow-y-auto border border-slate-200 rounded-lg divide-y divide-slate-100">
+                {classroomOptions.map((c) => (
+                  <label key={c} className="flex items-center gap-2 px-3 py-2 text-xs cursor-pointer hover:bg-slate-50">
+                    <input
+                      type="checkbox"
+                      checked={selectedClassrooms.has(c)}
+                      onChange={() => toggleClassroom(c)}
+                      className="accent-navy-700"
+                    />
+                    <span className="font-medium text-slate-700">{c}</span>
+                  </label>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-slate-400 italic">No classrooms found — admit a student first.</p>
+            )}
+            <p className="text-[10px] text-slate-400">
+              Every student currently in any selected class will be visible to this teacher (e.g. SS1, SS2).
+            </p>
           </div>
         </div>
       )}
@@ -312,7 +294,13 @@ export default function TeacherManagement({
                           }`}>
                             {t.teachingLevel ?? 'unassigned'}
                           </span>
-                          <span>{t.teachingLevel === 'primary' ? t.teachingClass : t.teachingSubject}</span>
+                          <span>
+                            {t.teachingLevel === 'primary'
+                              ? t.teachingClass
+                              : t.teachingClasses.length > 0
+                                ? `${t.teachingSubject} (${t.teachingClasses.join(', ')})`
+                                : t.teachingSubject}
+                          </span>
                           <span className="text-slate-300">•</span>
                           <span className="flex items-center gap-1"><Users className="w-3 h-3" />{t.assignedStudentIds.length} students</span>
                         </p>
