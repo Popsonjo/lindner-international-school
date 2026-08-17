@@ -166,7 +166,10 @@ export async function uploadStudentAvatar(studentId: string, file: File): Promis
  */
 export async function fetchTeachers(): Promise<TeacherProfile[]> {
   const [{ data: profiles, error: profileErr }, { data: links, error: linkErr }] = await Promise.all([
-    supabase.from('profiles').select('id, full_name').eq('role', 'teacher'),
+    supabase
+      .from('profiles')
+      .select('id, full_name, teaching_level, teaching_class, teaching_subject')
+      .eq('role', 'teacher'),
     supabase.from('teacher_students').select('teacher_user_id, student_id'),
   ]);
   if (profileErr) throw profileErr;
@@ -178,7 +181,117 @@ export async function fetchTeachers(): Promise<TeacherProfile[]> {
     assignedStudentIds: (links ?? [])
       .filter((l) => l.teacher_user_id === p.id)
       .map((l) => l.student_id),
+    teachingLevel: (p.teaching_level as TeacherProfile['teachingLevel']) ?? null,
+    teachingClass: p.teaching_class ?? null,
+    teachingSubject: p.teaching_subject ?? null,
   }));
+}
+
+export interface NewTeacherInput {
+  email: string;
+  password: string;
+  fullName: string;
+  level: 'primary' | 'secondary';
+  /** Required when level === 'primary'. Every student in this classroom is
+   *  auto-assigned. */
+  classroom?: string;
+  /** Required when level === 'secondary'. */
+  subject?: string;
+  /** Required when level === 'secondary' — there's no single classroom to
+   *  derive the roster from, so admin picks students directly. */
+  studentIds?: string[];
+}
+
+/**
+ * Creates a teacher's real login in-app, reusing the same signUp() call
+ * self-service parent sign-up uses. This is safe ONLY because Supabase's
+ * "Enable email confirmations" setting is on: with it on, signUp() returns
+ * no session for the new (unconfirmed) account, so the admin's own session
+ * in this browser is left untouched. If that setting is ever turned off,
+ * this call would instead return an active session for the new teacher and
+ * silently replace the admin's session with it — hence the check below.
+ */
+export async function createTeacher(input: NewTeacherInput): Promise<TeacherProfile> {
+  const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+    email: input.email.trim(),
+    password: input.password,
+    options: { data: { role: 'teacher', full_name: input.fullName.trim() } },
+  });
+  if (signUpError) throw signUpError;
+
+  const teacherId = signUpData.user?.id;
+  if (!teacherId) throw new Error('Could not create that account. Please try again.');
+  if (signUpData.session) {
+    throw new Error(
+      'That account was created, but Supabase returned an active session for it — ' +
+        '"Enable email confirmations" is probably off in Authentication settings. ' +
+        'Turn it back on before creating more staff accounts this way.',
+    );
+  }
+
+  const { error: profileError } = await supabase
+    .from('profiles')
+    .update({
+      teaching_level: input.level,
+      teaching_class: input.level === 'primary' ? (input.classroom ?? null) : null,
+      teaching_subject: input.level === 'secondary' ? (input.subject ?? null) : null,
+    })
+    .eq('id', teacherId);
+  if (profileError) throw profileError;
+
+  const assignedStudentIds = await assignTeacherStudents(teacherId, input);
+
+  return {
+    id: teacherId,
+    name: input.fullName.trim(),
+    assignedStudentIds,
+    teachingLevel: input.level,
+    teachingClass: input.level === 'primary' ? (input.classroom ?? null) : null,
+    teachingSubject: input.level === 'secondary' ? (input.subject ?? null) : null,
+  };
+}
+
+async function assignTeacherStudents(
+  teacherId: string,
+  input: { level: 'primary' | 'secondary'; classroom?: string; studentIds?: string[] },
+): Promise<string[]> {
+  const studentIds =
+    input.level === 'primary'
+      ? ((await supabase.from('students').select('id').eq('classroom', input.classroom ?? '')).data ?? []).map(
+          (r) => r.id as string,
+        )
+      : input.studentIds ?? [];
+
+  if (studentIds.length > 0) {
+    const { error } = await supabase
+      .from('teacher_students')
+      .insert(studentIds.map((studentId) => ({ teacher_user_id: teacherId, student_id: studentId })));
+    if (error) throw error;
+  }
+  return studentIds;
+}
+
+/** Re-derives a teacher's class/subject and student roster from scratch —
+ *  clears their existing assignments first so changing classroom/subject
+ *  doesn't leave stale access behind. */
+export async function updateTeacherAssignment(
+  teacherId: string,
+  input: { level: 'primary' | 'secondary'; classroom?: string; subject?: string; studentIds?: string[] },
+): Promise<string[]> {
+  const { error: profileError } = await supabase
+    .from('profiles')
+    .update({
+      teaching_level: input.level,
+      teaching_class: input.level === 'primary' ? (input.classroom ?? null) : null,
+      teaching_subject: input.level === 'secondary' ? (input.subject ?? null) : null,
+    })
+    .eq('id', teacherId);
+  if (profileError) throw profileError;
+
+  const { error: clearError } = await supabase.from('teacher_students').delete().eq('teacher_user_id', teacherId);
+  if (clearError) throw clearError;
+
+  return assignTeacherStudents(teacherId, input);
 }
 
 function mapEvent(row: Record<string, unknown>): SchoolEvent {

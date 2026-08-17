@@ -2,14 +2,15 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Lock, Users, ShieldAlert, Search, Trash2, Save,
   UserPlus, FileText, Activity, AlertTriangle, ChevronRight, X, Sparkles, BookOpen, CheckCircle2, Link2,
-  Inbox, Check,
+  Inbox, Check, GraduationCap,
 } from 'lucide-react';
-import { AdmissionApplication, StudentProfile, GradeRecord, PortalUser } from '../types';
+import { AdmissionApplication, StudentProfile, GradeRecord, PortalUser, TeacherProfile } from '../types';
 import { HOUSES } from '../data/mockData';
 import { LoginOutcome } from '../lib/auth';
-import { NewStudentInput } from '../lib/api';
+import { NewStudentInput, NewTeacherInput } from '../lib/api';
 import { DEFAULT_AVATAR_URL } from '../lib/storage';
 import { MAX_SCORE, MIN_SCORE, averageAttendance } from '../lib/grading';
+import TeacherManagement from './TeacherManagement';
 
 interface AdminPortalProps {
   students: StudentProfile[];
@@ -39,6 +40,12 @@ interface AdminPortalProps {
     house: StudentProfile['house'];
   }) => Promise<string>;
   onRejectApplication: (applicationId: string) => Promise<void>;
+  teachers: TeacherProfile[];
+  onCreateTeacher: (input: NewTeacherInput) => Promise<TeacherProfile>;
+  onUpdateTeacherAssignment: (
+    teacherId: string,
+    input: { level: 'primary' | 'secondary'; classroom?: string; subject?: string; studentIds?: string[] },
+  ) => Promise<void>;
 }
 
 type Notice = { tone: 'success' | 'error'; text: string };
@@ -79,12 +86,14 @@ export default function AdminPortal({
   students, user, onLogin, onLogout, onReauthenticate, onAddStudent, onLinkParent,
   onUpdateRemarks, onAddGrade, onDeleteGrade, onDeleteStudent,
   applications, onApproveApplication, onRejectApplication,
+  teachers, onCreateTeacher, onUpdateTeacherAssignment,
 }: AdminPortalProps) {
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [loginBusy, setLoginBusy] = useState(false);
 
+  const [showTeacherManagement, setShowTeacherManagement] = useState(false);
   const [showAdmissions, setShowAdmissions] = useState(false);
   const [expandedApplicationId, setExpandedApplicationId] = useState<string | null>(null);
   const [approveGradeLevel, setApproveGradeLevel] = useState('Grade 9 - Foundation Year');
@@ -571,6 +580,13 @@ export default function AdminPortal({
                 )}
               </button>
               <button
+                onClick={() => setShowTeacherManagement(true)}
+                className="px-3.5 py-2.5 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors"
+              >
+                <GraduationCap className="w-4 h-4" />
+                <span>Teachers</span>
+              </button>
+              <button
                 onClick={() => setShowBackroom(true)}
                 className="px-3.5 py-2.5 bg-slate-900 hover:bg-slate-800 text-gold-300 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors"
               >
@@ -1003,6 +1019,17 @@ export default function AdminPortal({
         </div>
 
       </div>
+
+      {/* Teacher management modal — administrators only */}
+      {showTeacherManagement && isAdmin && (
+        <TeacherManagement
+          students={students}
+          teachers={teachers}
+          onClose={() => setShowTeacherManagement(false)}
+          onCreateTeacher={onCreateTeacher}
+          onUpdateTeacherAssignment={onUpdateTeacherAssignment}
+        />
+      )}
 
       {/* Admissions review modal — administrators only */}
       {showAdmissions && isAdmin && (

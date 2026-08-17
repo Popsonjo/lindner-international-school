@@ -9,10 +9,32 @@ create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   role text not null default 'parent' check (role in ('admin', 'teacher', 'parent')),
   full_name text not null default '',
+  -- Teacher-only metadata (null for admin/parent rows). "primary" teachers are
+  -- assigned a whole classroom; "secondary" teachers are assigned a subject
+  -- plus an explicit student list, since one subject doesn't map to a single
+  -- fixed classroom the way primary school does.
+  teaching_level text check (teaching_level in ('primary', 'secondary')),
+  teaching_class text,
+  teaching_subject text,
   created_at timestamptz not null default now()
 );
 
 alter table public.profiles enable row level security;
+
+-- Backfill for databases created before these columns existed.
+alter table public.profiles add column if not exists teaching_level text;
+alter table public.profiles add column if not exists teaching_class text;
+alter table public.profiles add column if not exists teaching_subject text;
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'profiles_teaching_level_check'
+  ) then
+    alter table public.profiles
+      add constraint profiles_teaching_level_check
+      check (teaching_level in ('primary', 'secondary'));
+  end if;
+end $$;
 
 -- SECURITY DEFINER so RLS on profiles itself doesn't recurse when other
 -- policies call this to check the caller's role.
@@ -30,6 +52,14 @@ drop policy if exists "profiles_select_own_or_admin" on public.profiles;
 create policy "profiles_select_own_or_admin"
   on public.profiles for select
   using (id = auth.uid() or public.current_role() = 'admin');
+
+-- Needed for admin-created teacher accounts: setting role/teaching_level/
+-- teaching_class/teaching_subject on the new teacher's profile row.
+drop policy if exists "profiles_admin_write" on public.profiles;
+create policy "profiles_admin_write"
+  on public.profiles for update
+  using (public.current_role() = 'admin')
+  with check (public.current_role() = 'admin');
 
 -- New Supabase Auth users get a profile row automatically (role defaults to
 -- 'parent'; an admin corrects it afterwards for staff — see the runbook in

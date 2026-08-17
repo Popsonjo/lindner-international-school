@@ -7,10 +7,12 @@ import { supabase } from './lib/supabaseClient';
 import { LoginOutcome, SignUpOutcome, resolveSessionUser, signIn, signOut, signUp } from './lib/auth';
 import {
   NewStudentInput,
+  NewTeacherInput,
   addEvent,
   addGrade,
   approveApplication,
   createStudent,
+  createTeacher,
   deleteGrade,
   deleteStudent,
   fetchApplications,
@@ -21,6 +23,7 @@ import {
   rejectApplication,
   submitApplication,
   updateStudentRemarks,
+  updateTeacherAssignment,
   uploadStudentAvatar,
 } from './lib/api';
 import HeaderNav from './components/HeaderNav';
@@ -38,13 +41,14 @@ import NewsEventsSection from './components/pages/NewsEventsSection';
 import CampusLifeSection from './components/pages/CampusLifeSection';
 import AdmissionsSection from './components/pages/AdmissionsSection';
 import AlumniSection from './components/pages/AlumniSection';
-import type { AdmissionApplication, GradeRecord, SchoolEvent, StudentProfile } from './types';
+import type { AdmissionApplication, GradeRecord, SchoolEvent, StudentProfile, TeacherProfile } from './types';
 
 export default function App() {
   const location = useLocation();
 
   const [session, setSessionState] = useState<Session | null>(null);
   const [students, setStudents] = useState<StudentProfile[]>([]);
+  const [teachers, setTeachers] = useState<TeacherProfile[]>([]);
   const [events, setEvents] = useState<SchoolEvent[]>([]);
   const [applications, setApplications] = useState<AdmissionApplication[]>([]);
   const [user, setUser] = useState<PortalUser>({ role: 'public' });
@@ -75,6 +79,7 @@ export default function App() {
       ]);
       if (cancelled) return;
       setStudents(freshStudents);
+      setTeachers(freshTeachers);
       setEvents(freshEvents);
       setApplications(freshApplications);
       const resolved = await resolveSessionUser(session, freshStudents, freshTeachers);
@@ -192,6 +197,36 @@ export default function App() {
     const signedUrl = await uploadStudentAvatar(studentId, file);
     setStudents(prev => prev.map(s => (s.id === studentId ? { ...s, avatarUrl: signedUrl } : s)));
   }, []);
+
+  // Teacher mutations
+  const handleCreateTeacher = useCallback(async (input: NewTeacherInput): Promise<TeacherProfile> => {
+    const created = await createTeacher(input);
+    setTeachers(prev => [...prev, created]);
+    return created;
+  }, []);
+
+  const handleUpdateTeacherAssignment = useCallback(
+    async (
+      teacherId: string,
+      input: { level: 'primary' | 'secondary'; classroom?: string; subject?: string; studentIds?: string[] },
+    ): Promise<void> => {
+      const assignedStudentIds = await updateTeacherAssignment(teacherId, input);
+      setTeachers(prev =>
+        prev.map(t =>
+          t.id === teacherId
+            ? {
+                ...t,
+                assignedStudentIds,
+                teachingLevel: input.level,
+                teachingClass: input.level === 'primary' ? (input.classroom ?? null) : null,
+                teachingSubject: input.level === 'secondary' ? (input.subject ?? null) : null,
+              }
+            : t,
+        ),
+      );
+    },
+    [],
+  );
 
   // Events mutations
   const handleAddNewEvent = useCallback(async (newEvent: Omit<SchoolEvent, 'id'>): Promise<void> => {
@@ -315,6 +350,9 @@ export default function App() {
                     applications={applications}
                     onApproveApplication={handleApproveApplication}
                     onRejectApplication={handleRejectApplication}
+                    teachers={teachers}
+                    onCreateTeacher={handleCreateTeacher}
+                    onUpdateTeacherAssignment={handleUpdateTeacherAssignment}
                   />
                 }
               />

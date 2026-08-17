@@ -51,6 +51,9 @@ export interface TeacherProfile {
   id: string; // Supabase Auth user id
   name: string;
   assignedStudentIds: string[];
+  teachingLevel: 'primary' | 'secondary' | null;
+  teachingClass: string | null; // set when teachingLevel === 'primary'
+  teachingSubject: string | null; // set when teachingLevel === 'secondary'
 }
 
 /**
