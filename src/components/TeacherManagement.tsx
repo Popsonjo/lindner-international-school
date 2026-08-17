@@ -16,6 +16,20 @@ interface TeacherManagementProps {
 
 type ViewMode = 'list' | 'create' | { edit: string };
 
+const STAFF_EMAIL_DOMAIN = 'lindnerintl.edu.ng';
+const NAME_TITLES = new Set(['dr', 'mr', 'mrs', 'ms', 'miss', 'prof', 'professor', 'rev']);
+
+/** "Dr. Evelyn Foster" -> "evelyn@lindnerintl.edu.ng" — skips honorifics so
+ *  the login isn't generated from a title instead of an actual name. */
+function generateStaffEmail(fullName: string): string {
+  const firstName = fullName
+    .trim()
+    .split(/\s+/)
+    .map((part) => part.replace(/[^a-zA-Z]/g, ''))
+    .find((part) => part && !NAME_TITLES.has(part.toLowerCase()));
+  return firstName ? `${firstName.toLowerCase()}@${STAFF_EMAIL_DOMAIN}` : '';
+}
+
 export default function TeacherManagement({
   students, teachers, onClose, onCreateTeacher, onUpdateTeacherAssignment,
 }: TeacherManagementProps) {
@@ -26,6 +40,7 @@ export default function TeacherManagement({
   // Create-only fields
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
+  const [emailManuallyEdited, setEmailManuallyEdited] = useState(false);
   const [password, setPassword] = useState('');
 
   // Shared create/edit fields
@@ -51,6 +66,7 @@ export default function TeacherManagement({
   const resetForm = () => {
     setFullName('');
     setEmail('');
+    setEmailManuallyEdited(false);
     setPassword('');
     setLevel('primary');
     setClassroom(classroomOptions[0] ?? '');
@@ -58,6 +74,16 @@ export default function TeacherManagement({
     setSelectedStudentIds(new Set());
     setStudentSearch('');
     setError('');
+  };
+
+  const handleFullNameChange = (value: string) => {
+    setFullName(value);
+    if (!emailManuallyEdited) setEmail(generateStaffEmail(value));
+  };
+
+  const handleEmailChange = (value: string) => {
+    setEmail(value);
+    setEmailManuallyEdited(true);
   };
 
   const startCreate = () => {
@@ -316,11 +342,13 @@ export default function TeacherManagement({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1 sm:col-span-2">
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block">Full Name</label>
-                  <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="e.g. Dr. Evelyn Foster" className="w-full text-sm p-2.5 rounded-lg border border-slate-200 focus:outline-none" />
+                  <input type="text" value={fullName} onChange={(e) => handleFullNameChange(e.target.value)} placeholder="e.g. Dr. Evelyn Foster" className="w-full text-sm p-2.5 rounded-lg border border-slate-200 focus:outline-none" />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block">Email</label>
-                  <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="teacher@lindner.edu" className="w-full text-sm p-2.5 rounded-lg border border-slate-200 focus:outline-none" />
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block">
+                    Email {!emailManuallyEdited && fullName.trim() && <span className="normal-case font-normal text-slate-400">(auto-generated)</span>}
+                  </label>
+                  <input type="email" value={email} onChange={(e) => handleEmailChange(e.target.value)} placeholder="Generated from full name" className="w-full text-sm p-2.5 rounded-lg border border-slate-200 focus:outline-none" />
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block">Password</label>
@@ -331,8 +359,10 @@ export default function TeacherManagement({
               {renderAssignmentFields()}
 
               <p className="text-[10px] text-slate-400 leading-snug">
-                The teacher will receive a confirmation email (Supabase's "Enable email confirmations" must stay on) —
-                they'll need to confirm it before signing in with the password above.
+                A confirmation email is sent to that address (Supabase's "Enable email confirmations" must stay on) —
+                they'll need to confirm it before signing in with the password above. If {STAFF_EMAIL_DOMAIN} isn't a
+                real mailbox yet, confirm the account manually instead: Supabase Dashboard → Authentication → Users →
+                find them → confirm their email from there.
               </p>
 
               <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
