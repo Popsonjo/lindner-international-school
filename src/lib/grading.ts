@@ -3,6 +3,20 @@ import type { GradeRecord, StudentProfile } from '../types';
 export const MIN_SCORE = 0;
 export const MAX_SCORE = 100;
 
+/** Every session at LIS runs First, Second, then Third Term, in that order. */
+export const TERM_OPTIONS: readonly GradeRecord['term'][] = ['First Term', 'Second Term', 'Third Term'];
+
+/**
+ * The academic session (e.g. "2025/2026") a given date falls in. LIS sessions
+ * run September to July, so a date before September belongs to the session
+ * that started the previous calendar year.
+ */
+export function currentAcademicSession(date: Date = new Date()): string {
+  const year = date.getFullYear();
+  const startsThisYear = date.getMonth() >= 8; // 8 = September
+  return startsThisYear ? `${year}/${year + 1}` : `${year - 1}/${year}`;
+}
+
 export type GradeLetter = GradeRecord['grade'];
 
 export const GRADE_LETTERS: readonly GradeLetter[] = ['A+', 'A', 'B', 'C', 'D', 'F'];

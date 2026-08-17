@@ -1,5 +1,6 @@
 import { Trophy } from 'lucide-react';
 import { HOUSES, HOUSE_POINTS } from '../data/mockData';
+import { currentAcademicSession } from '../lib/grading';
 
 const RANK_LABEL = ['1st', '2nd', '3rd', '4th'];
 
@@ -17,7 +18,7 @@ export default function HouseLeaderboard() {
           <Trophy className="w-6 h-6 text-gold-500" />
           <span>House Points Leaderboard</span>
         </h2>
-        <span className="text-xs font-mono text-slate-400 uppercase tracking-wider">Term 2, 2026</span>
+        <span className="text-xs font-mono text-slate-400 uppercase tracking-wider">{currentAcademicSession()} Session</span>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

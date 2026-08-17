@@ -7,7 +7,7 @@ import {
 import { AdmissionApplication, StudentProfile, PortalUser } from '../types';
 import { HOUSES } from '../data/mockData';
 import { LoginOutcome, SignUpOutcome } from '../lib/auth';
-import { MAX_SCORE, MIN_SCORE, averageScore, letterForScore } from '../lib/grading';
+import { MAX_SCORE, MIN_SCORE, averageScore, currentAcademicSession, letterForScore } from '../lib/grading';
 
 interface ParentPortalProps {
   students: StudentProfile[];
@@ -699,9 +699,9 @@ export default function ParentPortal({
         <div className="lg:col-span-8 bg-white border border-slate-100 p-6 sm:p-8 rounded-2xl shadow-sm space-y-6">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <h3 className="text-lg font-serif font-bold text-slate-800">
-              Terminal Subject Transcript (Term 2)
+              Terminal Subject Transcript
             </h3>
-            <span className="text-xs font-mono text-slate-400">Standard: IB/GCSE Mapping</span>
+            <span className="text-xs font-mono text-slate-400">{currentAcademicSession()} Session</span>
           </div>
 
           <div className="space-y-5">
@@ -719,6 +719,7 @@ export default function ParentPortal({
                     </h4>
                     <p className="text-[11px] text-slate-400 font-light">
                       Instructor: <span className="font-medium text-slate-500">{grade.teacher}</span>
+                      {' · '}{grade.term}, {grade.session}
                     </p>
                   </div>
                   <div className="text-right flex items-center space-x-3">

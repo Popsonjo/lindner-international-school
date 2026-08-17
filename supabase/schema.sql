@@ -211,12 +211,34 @@ create table if not exists public.grades (
   score numeric not null check (score >= 0 and score <= 100),
   grade text generated always as (public.compute_grade_letter(score)) stored,
   teacher text not null default 'Unassigned',
-  term text not null default 'Term 2' check (term in ('Term 1', 'Term 2', 'Term 3', 'Midterm', 'Final')),
+  -- Every session runs First, Second, then Third Term (see TERM_OPTIONS in
+  -- src/lib/grading.ts). `session` is a free-text academic year, e.g. "2025/2026".
+  term text not null default 'First Term' check (term in ('First Term', 'Second Term', 'Third Term')),
+  session text not null default '2025/2026',
   created_at timestamptz not null default now(),
-  unique (student_id, subject)
+  unique (student_id, subject, term, session)
 );
 
 alter table public.grades enable row level security;
+
+-- Migration for databases created before term/session were split out to
+-- support multiple terms per subject per student.
+alter table public.grades add column if not exists session text not null default '2025/2026';
+update public.grades set term = case term
+  when 'Term 1' then 'First Term'
+  when 'Term 2' then 'Second Term'
+  when 'Term 3' then 'Third Term'
+  when 'Midterm' then 'First Term'
+  when 'Final' then 'Third Term'
+  else term
+end
+where term not in ('First Term', 'Second Term', 'Third Term');
+alter table public.grades drop constraint if exists grades_term_check;
+alter table public.grades add constraint grades_term_check check (term in ('First Term', 'Second Term', 'Third Term'));
+alter table public.grades alter column term set default 'First Term';
+alter table public.grades drop constraint if exists grades_student_id_subject_key;
+alter table public.grades drop constraint if exists grades_student_id_subject_term_session_key;
+alter table public.grades add constraint grades_student_id_subject_term_session_key unique (student_id, subject, term, session);
 
 drop policy if exists "grades_select_scoped" on public.grades;
 create policy "grades_select_scoped"

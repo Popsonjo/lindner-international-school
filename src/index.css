@@ -1,7 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 
-/**
+/*
  * Brand palette — navy + gold, matched to the official LIS crest.
  * Defining these here (rather than scattering hex literals through every
  * component) means the whole school's chrome updates from one place; these

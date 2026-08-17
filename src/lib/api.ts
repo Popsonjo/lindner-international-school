@@ -17,6 +17,7 @@ interface GradeRow {
   grade: GradeRecord['grade'];
   teacher: string;
   term: GradeRecord['term'];
+  session: string;
 }
 
 interface StudentRow {
@@ -56,6 +57,7 @@ function mapGrade(row: GradeRow): GradeRecord {
     grade: row.grade,
     teacher: row.teacher,
     term: row.term,
+    session: row.session,
   };
 }
 
@@ -383,7 +385,7 @@ export async function deleteStudent(studentId: string): Promise<void> {
 
 export async function addGrade(
   studentId: string,
-  grade: { subject: string; score: number; teacher: string; term: GradeRecord['term'] },
+  grade: { subject: string; score: number; teacher: string; term: GradeRecord['term']; session: string },
 ): Promise<GradeRecord> {
   const { data, error } = await supabase
     .from('grades')
@@ -393,6 +395,7 @@ export async function addGrade(
       score: grade.score,
       teacher: grade.teacher,
       term: grade.term,
+      session: grade.session,
     })
     .select()
     .single();

@@ -172,7 +172,7 @@ export default function App() {
   const handleAddGrade = useCallback(
     async (
       studentId: string,
-      grade: { subject: string; score: number; teacher: string; term: GradeRecord['term'] },
+      grade: { subject: string; score: number; teacher: string; term: GradeRecord['term']; session: string },
     ): Promise<GradeRecord> => {
       const created = await addGrade(studentId, grade);
       setStudents(prev =>

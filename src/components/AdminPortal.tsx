@@ -9,7 +9,7 @@ import { HOUSES } from '../data/mockData';
 import { LoginOutcome } from '../lib/auth';
 import { NewStudentInput, NewTeacherInput } from '../lib/api';
 import { DEFAULT_AVATAR_URL } from '../lib/storage';
-import { MAX_SCORE, MIN_SCORE, averageAttendance } from '../lib/grading';
+import { MAX_SCORE, MIN_SCORE, TERM_OPTIONS, averageAttendance, currentAcademicSession } from '../lib/grading';
 import TeacherManagement from './TeacherManagement';
 
 interface AdminPortalProps {
@@ -26,7 +26,7 @@ interface AdminPortalProps {
   ) => Promise<void>;
   onAddGrade: (
     studentId: string,
-    grade: { subject: string; score: number; teacher: string; term: GradeRecord['term'] },
+    grade: { subject: string; score: number; teacher: string; term: GradeRecord['term']; session: string },
   ) => Promise<GradeRecord>;
   onDeleteGrade: (gradeId: string) => Promise<void>;
   onDeleteStudent: (id: string) => Promise<void>;
@@ -189,6 +189,8 @@ export default function AdminPortal({
   const [newSubjName, setNewSubjName] = useState('');
   const [newSubjScore, setNewSubjScore] = useState('85');
   const [newSubjTeacher, setNewSubjTeacher] = useState('');
+  const [newSubjTerm, setNewSubjTerm] = useState<GradeRecord['term']>(TERM_OPTIONS[0]);
+  const [newSubjSession, setNewSubjSession] = useState(currentAcademicSession());
 
   const activeStudentId = activeStudent?.id ?? null;
 
@@ -358,12 +360,20 @@ export default function AdminPortal({
 
     const subject = newSubjName.trim();
     const teacher = newSubjTeacher.trim();
-    if (!subject || !teacher) {
-      flash('error', 'Subject and instructor are both required.');
+    const session = newSubjSession.trim();
+    if (!subject || !teacher || !session) {
+      flash('error', 'Subject, instructor, and session are all required.');
       return;
     }
-    if (activeStudent.grades.some(g => g.subject.toLowerCase() === subject.toLowerCase())) {
-      flash('error', `${activeStudent.name} already has a record for "${subject}".`);
+    if (
+      activeStudent.grades.some(
+        g =>
+          g.subject.toLowerCase() === subject.toLowerCase() &&
+          g.term === newSubjTerm &&
+          g.session === session,
+      )
+    ) {
+      flash('error', `${activeStudent.name} already has a "${subject}" record for ${newSubjTerm}, ${session}.`);
       return;
     }
 
@@ -374,8 +384,8 @@ export default function AdminPortal({
     }
 
     try {
-      await onAddGrade(activeStudent.id, { subject, score: parsed, teacher, term: 'Term 2' });
-      flash('success', `${subject} recorded for ${activeStudent.name}.`);
+      await onAddGrade(activeStudent.id, { subject, score: parsed, teacher, term: newSubjTerm, session });
+      flash('success', `${subject} recorded for ${activeStudent.name} (${newSubjTerm}, ${session}).`);
       setNewSubjName('');
       setNewSubjScore('85');
       setNewSubjTeacher('');
@@ -865,7 +875,9 @@ export default function AdminPortal({
                     <div key={g.id} className="flex justify-between items-center gap-4 py-2 border-b border-slate-100 last:border-0 bg-white hover:bg-slate-50/50 px-2 rounded-lg">
                       <div className="min-w-0">
                         <p className="text-xs font-bold text-slate-800 truncate">{g.subject}</p>
-                        <p className="text-[10px] text-slate-400 font-light">Taught by: {g.teacher}</p>
+                        <p className="text-[10px] text-slate-400 font-light">
+                          Taught by: {g.teacher} · {g.term}, {g.session}
+                        </p>
                       </div>
 
                       <div className="flex items-center space-x-4 shrink-0">
@@ -938,6 +950,28 @@ export default function AdminPortal({
                           Add Grade
                         </button>
                       </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <select
+                        value={newSubjTerm}
+                        onChange={(e) => setNewSubjTerm(e.target.value as GradeRecord['term'])}
+                        aria-label="Term"
+                        className="text-xs p-2.5 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#16305F]"
+                      >
+                        {TERM_OPTIONS.map((t) => (
+                          <option key={t} value={t}>{t}</option>
+                        ))}
+                      </select>
+                      <input
+                        type="text"
+                        required
+                        value={newSubjSession}
+                        onChange={(e) => setNewSubjSession(e.target.value)}
+                        placeholder="e.g. 2025/2026"
+                        aria-label="Academic session"
+                        className="text-xs p-2.5 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#16305F]"
+                      />
                     </div>
                   </form>
                 )}

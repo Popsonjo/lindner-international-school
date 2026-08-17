@@ -4,7 +4,8 @@ export interface GradeRecord {
   score: number;
   grade: 'A+' | 'A' | 'B' | 'C' | 'D' | 'F';
   teacher: string;
-  term: 'Term 1' | 'Term 2' | 'Term 3' | 'Midterm' | 'Final';
+  term: 'First Term' | 'Second Term' | 'Third Term';
+  session: string; // Academic session/year, e.g. "2025/2026"
 }
 
 export interface AttendanceRecord {
