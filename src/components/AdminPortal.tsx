@@ -2,15 +2,17 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Lock, Users, ShieldAlert, Search, Trash2, Save,
   UserPlus, FileText, Activity, AlertTriangle, ChevronRight, X, Sparkles, BookOpen, CheckCircle2, Link2,
-  Inbox, Check, GraduationCap,
+  Inbox, Check, GraduationCap, MessageSquare,
 } from 'lucide-react';
-import { AdmissionApplication, StudentProfile, GradeRecord, PortalUser, TeacherProfile } from '../types';
+import { AdmissionApplication, ChatMessage, Conversation, StudentProfile, GradeRecord, PortalUser, TeacherProfile } from '../types';
 import { HOUSES } from '../data/mockData';
 import { LoginOutcome } from '../lib/auth';
 import { NewStudentInput, NewTeacherInput } from '../lib/api';
 import { DEFAULT_AVATAR_URL } from '../lib/storage';
 import { MAX_SCORE, MIN_SCORE, TERM_OPTIONS, averageAttendance, currentAcademicSession } from '../lib/grading';
 import TeacherManagement from './TeacherManagement';
+import TeacherMessages from './TeacherMessages';
+import AdminMessagesPanel from './AdminMessagesPanel';
 
 interface AdminPortalProps {
   students: StudentProfile[];
@@ -46,6 +48,11 @@ interface AdminPortalProps {
     teacherId: string,
     input: { level: 'primary' | 'secondary'; classroom?: string; subject?: string; classrooms?: string[] },
   ) => Promise<void>;
+  onGetOrCreateConversation: (studentId: string, teacherId: string) => Promise<Conversation>;
+  onFetchConversations: () => Promise<Conversation[]>;
+  onFetchMessages: (conversationId: string) => Promise<ChatMessage[]>;
+  onSendMessage: (conversationId: string, body: string) => Promise<ChatMessage>;
+  onSubscribeMessages: (conversationId: string, onInsert: (message: ChatMessage) => void) => () => void;
 }
 
 type Notice = { tone: 'success' | 'error'; text: string };
@@ -87,6 +94,7 @@ export default function AdminPortal({
   onUpdateRemarks, onAddGrade, onDeleteGrade, onDeleteStudent,
   applications, onApproveApplication, onRejectApplication,
   teachers, onCreateTeacher, onUpdateTeacherAssignment,
+  onGetOrCreateConversation, onFetchConversations, onFetchMessages, onSendMessage, onSubscribeMessages,
 }: AdminPortalProps) {
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
@@ -94,6 +102,7 @@ export default function AdminPortal({
   const [loginBusy, setLoginBusy] = useState(false);
 
   const [showTeacherManagement, setShowTeacherManagement] = useState(false);
+  const [showMessaging, setShowMessaging] = useState(false);
   const [showAdmissions, setShowAdmissions] = useState(false);
   const [expandedApplicationId, setExpandedApplicationId] = useState<string | null>(null);
   const [approveGradeLevel, setApproveGradeLevel] = useState('Grade 9 - Foundation Year');
@@ -605,6 +614,15 @@ export default function AdminPortal({
               </button>
             </>
           )}
+          {(isAdmin || isTeacher) && (
+            <button
+              onClick={() => setShowMessaging(true)}
+              className="px-3.5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors"
+            >
+              <MessageSquare className="w-4 h-4" />
+              <span>Messages</span>
+            </button>
+          )}
           <button
             onClick={onLogout}
             className="px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-colors border border-slate-200/40"
@@ -1062,6 +1080,29 @@ export default function AdminPortal({
           onClose={() => setShowTeacherManagement(false)}
           onCreateTeacher={onCreateTeacher}
           onUpdateTeacherAssignment={onUpdateTeacherAssignment}
+        />
+      )}
+
+      {showMessaging && isTeacher && user.teacherId && (
+        <TeacherMessages
+          students={availableStudents}
+          teacherId={user.teacherId}
+          onClose={() => setShowMessaging(false)}
+          onGetOrCreateConversation={onGetOrCreateConversation}
+          onFetchMessages={onFetchMessages}
+          onSendMessage={onSendMessage}
+          onSubscribeMessages={onSubscribeMessages}
+        />
+      )}
+
+      {showMessaging && isAdmin && (
+        <AdminMessagesPanel
+          students={students}
+          teachers={teachers}
+          onClose={() => setShowMessaging(false)}
+          onFetchConversations={onFetchConversations}
+          onFetchMessages={onFetchMessages}
+          onSubscribeMessages={onSubscribeMessages}
         />
       )}
 

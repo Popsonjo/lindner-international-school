@@ -1,4 +1,4 @@
-import type { AdmissionApplication, GradeRecord, SchoolEvent, StudentProfile, TeacherProfile } from '../types';
+import type { AdmissionApplication, ChatMessage, Conversation, GradeRecord, SchoolEvent, StudentProfile, TeacherProfile } from '../types';
 import { supabase } from './supabaseClient';
 
 /**
@@ -547,4 +547,158 @@ export async function approveApplication(input: {
   });
   if (error) throw error;
   return data as string;
+}
+
+// ---------------------------------------------------------------------------
+// Parent <-> teacher messaging (see conversations/messages in schema.sql).
+// ---------------------------------------------------------------------------
+
+export interface TeacherContact {
+  teacherId: string;
+  fullName: string;
+  teachingSubject: string | null;
+  teachingClass: string | null;
+}
+
+interface TeacherContactRow {
+  teacher_id: string;
+  full_name: string;
+  teaching_subject: string | null;
+  teaching_class: string | null;
+}
+
+/** Who a parent (or an admin browsing a student) is allowed to message about
+ *  a given child — every teacher actually assigned to that student. */
+export async function listTeachersForStudent(studentId: string): Promise<TeacherContact[]> {
+  const { data, error } = await supabase.rpc('list_teachers_for_student', { p_student_id: studentId });
+  if (error) throw error;
+  return (data as TeacherContactRow[] ?? []).map((r) => ({
+    teacherId: r.teacher_id,
+    fullName: r.full_name,
+    teachingSubject: r.teaching_subject,
+    teachingClass: r.teaching_class,
+  }));
+}
+
+interface ConversationRow {
+  id: string;
+  student_id: string;
+  teacher_id: string;
+  created_at: string;
+}
+
+function mapConversation(row: ConversationRow): Conversation {
+  return { id: row.id, studentId: row.student_id, teacherId: row.teacher_id, createdAt: row.created_at };
+}
+
+/** Opens the (student, teacher) thread, creating it on first contact. Safe
+ *  to call every time a chat panel is opened — RLS's can_create_conversation
+ *  check rejects it if this teacher isn't actually assigned to this student. */
+export async function getOrCreateConversation(studentId: string, teacherId: string): Promise<Conversation> {
+  const { data: existing, error: selectError } = await supabase
+    .from('conversations')
+    .select('*')
+    .eq('student_id', studentId)
+    .eq('teacher_id', teacherId)
+    .maybeSingle();
+  if (selectError) throw selectError;
+  if (existing) return mapConversation(existing as ConversationRow);
+
+  const { data: created, error: insertError } = await supabase
+    .from('conversations')
+    .insert({ student_id: studentId, teacher_id: teacherId })
+    .select()
+    .single();
+  if (insertError) {
+    // Unique-violation race: someone else opened this same thread first —
+    // just fetch what they created instead of surfacing an error.
+    if (insertError.code === '23505') {
+      const { data: raced, error: racedError } = await supabase
+        .from('conversations')
+        .select('*')
+        .eq('student_id', studentId)
+        .eq('teacher_id', teacherId)
+        .single();
+      if (racedError) throw racedError;
+      return mapConversation(raced as ConversationRow);
+    }
+    throw insertError;
+  }
+  return mapConversation(created as ConversationRow);
+}
+
+/** Every conversation the caller can see — for admin this is the whole
+ *  school (oversight view); RLS scopes it automatically for anyone else. */
+export async function fetchConversations(): Promise<Conversation[]> {
+  const { data, error } = await supabase
+    .from('conversations')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data as ConversationRow[] ?? []).map(mapConversation);
+}
+
+interface MessageRow {
+  id: string;
+  conversation_id: string;
+  sender_id: string;
+  sender_role: ChatMessage['senderRole'];
+  body: string;
+  created_at: string;
+}
+
+function mapMessage(row: MessageRow): ChatMessage {
+  return {
+    id: row.id,
+    conversationId: row.conversation_id,
+    senderId: row.sender_id,
+    senderRole: row.sender_role,
+    body: row.body,
+    createdAt: row.created_at,
+  };
+}
+
+export async function fetchMessages(conversationId: string): Promise<ChatMessage[]> {
+  const { data, error } = await supabase
+    .from('messages')
+    .select('*')
+    .eq('conversation_id', conversationId)
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  return (data as MessageRow[] ?? []).map(mapMessage);
+}
+
+export async function sendMessage(
+  conversationId: string,
+  senderRole: ChatMessage['senderRole'],
+  body: string,
+): Promise<ChatMessage> {
+  const { data: userData, error: userError } = await supabase.auth.getUser();
+  if (userError) throw userError;
+  const senderId = userData.user?.id;
+  if (!senderId) throw new Error('You must be signed in to send a message.');
+
+  const { data, error } = await supabase
+    .from('messages')
+    .insert({ conversation_id: conversationId, sender_id: senderId, sender_role: senderRole, body: body.trim() })
+    .select()
+    .single();
+  if (error) throw error;
+  return mapMessage(data as MessageRow);
+}
+
+/** Pushes new messages into `onInsert` as they arrive — used to keep an open
+ *  chat panel live without polling. Call the returned function to stop. */
+export function subscribeToMessages(conversationId: string, onInsert: (message: ChatMessage) => void): () => void {
+  const channel = supabase
+    .channel(`messages:${conversationId}`)
+    .on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'messages', filter: `conversation_id=eq.${conversationId}` },
+      (payload) => onInsert(mapMessage(payload.new as MessageRow)),
+    )
+    .subscribe();
+  return () => {
+    supabase.removeChannel(channel);
+  };
 }

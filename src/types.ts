@@ -75,6 +75,23 @@ export interface AdmissionApplication {
   submittedAt: string;
 }
 
+/** A messaging thread between one student's parent and one of that student's teachers. */
+export interface Conversation {
+  id: string;
+  studentId: string;
+  teacherId: string;
+  createdAt: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  conversationId: string;
+  senderId: string;
+  senderRole: 'parent' | 'teacher';
+  body: string;
+  createdAt: string;
+}
+
 export interface PortalUser {
   /** 'pending_parent' = a signed-in parent account not yet linked to a student
    *  (either awaiting admission review, or an admin hasn't linked them yet). */

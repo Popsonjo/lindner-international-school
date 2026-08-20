@@ -16,12 +16,18 @@ import {
   deleteGrade,
   deleteStudent,
   fetchApplications,
+  fetchConversations,
   fetchEvents,
+  fetchMessages,
   fetchStudents,
   fetchTeachers,
+  getOrCreateConversation,
   linkParentByEmail,
+  listTeachersForStudent,
   rejectApplication,
+  sendMessage as sendChatMessage,
   submitApplication,
+  subscribeToMessages,
   updateStudentRemarks,
   updateTeacherAssignment,
   uploadStudentAvatar,
@@ -229,6 +235,17 @@ export default function App() {
     [],
   );
 
+  // Messaging — role is bound here so ParentPortal/AdminPortal only need to
+  // pass (conversationId, body), never able to spoof the other side's role.
+  const handleSendParentMessage = useCallback(
+    (conversationId: string, body: string) => sendChatMessage(conversationId, 'parent', body),
+    [],
+  );
+  const handleSendTeacherMessage = useCallback(
+    (conversationId: string, body: string) => sendChatMessage(conversationId, 'teacher', body),
+    [],
+  );
+
   // Events mutations
   const handleAddNewEvent = useCallback(async (newEvent: Omit<SchoolEvent, 'id'>): Promise<void> => {
     const created = await addEvent(newEvent);
@@ -330,6 +347,11 @@ export default function App() {
                     ownApplication={applications.length > 0 ? applications[applications.length - 1] : null}
                     onSubmitApplication={handleSubmitApplication}
                     onUploadAvatar={handleUploadAvatar}
+                    onListTeachersForStudent={listTeachersForStudent}
+                    onGetOrCreateConversation={getOrCreateConversation}
+                    onFetchMessages={fetchMessages}
+                    onSendMessage={handleSendParentMessage}
+                    onSubscribeMessages={subscribeToMessages}
                   />
                 }
               />
@@ -354,6 +376,11 @@ export default function App() {
                     teachers={teachers}
                     onCreateTeacher={handleCreateTeacher}
                     onUpdateTeacherAssignment={handleUpdateTeacherAssignment}
+                    onGetOrCreateConversation={getOrCreateConversation}
+                    onFetchConversations={fetchConversations}
+                    onFetchMessages={fetchMessages}
+                    onSendMessage={handleSendTeacherMessage}
+                    onSubscribeMessages={subscribeToMessages}
                   />
                 }
               />

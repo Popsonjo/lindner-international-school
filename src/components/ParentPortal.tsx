@@ -2,12 +2,14 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Key, Award, AlertTriangle, CheckCircle2, FileText, Camera,
-  UserCheck, MessageSquare, BookOpen, Send, Download, Sparkles
+  UserCheck, MessageSquare, BookOpen, Download, Sparkles
 } from 'lucide-react';
-import { AdmissionApplication, StudentProfile, PortalUser } from '../types';
+import { AdmissionApplication, ChatMessage, Conversation, StudentProfile, PortalUser } from '../types';
 import { HOUSES } from '../data/mockData';
 import { LoginOutcome, SignUpOutcome } from '../lib/auth';
 import { MAX_SCORE, MIN_SCORE, averageScore, currentAcademicSession, letterForScore } from '../lib/grading';
+import { TeacherContact } from '../lib/api';
+import ChatThread from './ChatThread';
 
 interface ParentPortalProps {
   students: StudentProfile[];
@@ -30,6 +32,11 @@ interface ParentPortalProps {
     photoFile?: File | null,
   ) => Promise<AdmissionApplication>;
   onUploadAvatar: (studentId: string, file: File) => Promise<void>;
+  onListTeachersForStudent: (studentId: string) => Promise<TeacherContact[]>;
+  onGetOrCreateConversation: (studentId: string, teacherId: string) => Promise<Conversation>;
+  onFetchMessages: (conversationId: string) => Promise<ChatMessage[]>;
+  onSendMessage: (conversationId: string, body: string) => Promise<ChatMessage>;
+  onSubscribeMessages: (conversationId: string, onInsert: (message: ChatMessage) => void) => () => void;
 }
 
 const STANDING_STYLES: Record<StudentProfile['generalStatus'], { badge: string; label: string }> = {
@@ -41,6 +48,7 @@ const STANDING_STYLES: Record<StudentProfile['generalStatus'], { badge: string; 
 
 export default function ParentPortal({
   students, user, onLogin, onSignUp, onLogout, ownApplication, onSubmitApplication, onUploadAvatar,
+  onListTeachersForStudent, onGetOrCreateConversation, onFetchMessages, onSendMessage, onSubscribeMessages,
 }: ParentPortalProps) {
   const [searchParams] = useSearchParams();
   // "Apply Now" on the homepage links here with ?signup=1 so prospective
@@ -71,24 +79,57 @@ export default function ParentPortal({
   const [appBusy, setAppBusy] = useState(false);
   const [appSubmitted, setAppSubmitted] = useState(false);
 
-  // Message simulator states
-  const [chatMessage, setChatMessage] = useState('');
-  const [chatLogs, setChatLogs] = useState<{ sender: 'parent' | 'teacher'; text: string; time: string }[]>([
-    { sender: 'teacher', text: 'Greeting! I am glad to share your child’s progress. Should you have any questions on the term exam schedules, please feel free to send me a message here.', time: 'Yesterday, 04:30 PM' }
-  ]);
-
-  // Pending simulated replies, cleared on unmount so a logout mid-conversation
-  // cannot fire a state update against a torn-down component.
-  const replyTimers = useRef<number[]>([]);
-  useEffect(
-    () => () => {
-      replyTimers.current.forEach(window.clearTimeout);
-      replyTimers.current = [];
-    },
-    [],
-  );
+  // Teacher messaging — who the parent can message about this child, and the
+  // currently open thread with whichever one is selected.
+  const [teacherContacts, setTeacherContacts] = useState<TeacherContact[]>([]);
+  const [contactsLoading, setContactsLoading] = useState(false);
+  const [selectedTeacherId, setSelectedTeacherId] = useState('');
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [conversationError, setConversationError] = useState('');
 
   const activeStudent = students.find(s => s.studentId === user.studentId);
+  const activeStudentId = activeStudent?.id ?? null;
+
+  // Load this child's teacher contacts once we know who the active student is.
+  useEffect(() => {
+    if (!activeStudentId) {
+      setTeacherContacts([]);
+      setSelectedTeacherId('');
+      return;
+    }
+    let cancelled = false;
+    setContactsLoading(true);
+    onListTeachersForStudent(activeStudentId)
+      .then((contacts) => {
+        if (cancelled) return;
+        setTeacherContacts(contacts);
+        setSelectedTeacherId((prev) => (contacts.some((c) => c.teacherId === prev) ? prev : contacts[0]?.teacherId ?? ''));
+      })
+      .catch(() => { if (!cancelled) setTeacherContacts([]); })
+      .finally(() => { if (!cancelled) setContactsLoading(false); });
+    return () => { cancelled = true; };
+  }, [activeStudentId, onListTeachersForStudent]);
+
+  // Open (or create) the thread with whichever teacher is currently selected.
+  useEffect(() => {
+    if (!activeStudentId || !selectedTeacherId) {
+      setConversationId(null);
+      return;
+    }
+    let cancelled = false;
+    setConversationError('');
+    onGetOrCreateConversation(activeStudentId, selectedTeacherId)
+      .then((conversation) => { if (!cancelled) setConversationId(conversation.id); })
+      .catch((err) => {
+        if (!cancelled) {
+          setConversationId(null);
+          setConversationError(err instanceof Error ? err.message : 'Could not open that conversation.');
+        }
+      });
+    return () => { cancelled = true; };
+  }, [activeStudentId, selectedTeacherId, onGetOrCreateConversation]);
+
+  const selectedTeacher = teacherContacts.find((c) => c.teacherId === selectedTeacherId) ?? null;
 
   // Once the parent link resolves (handled server-side by the signup trigger
   // matching this email to a student's parent_email), the dashboard below
@@ -195,29 +236,6 @@ export default function ParentPortal({
 
   // Revokes the previous preview URL whenever it changes, and on unmount.
   useEffect(() => () => { if (appPhotoPreview) URL.revokeObjectURL(appPhotoPreview); }, [appPhotoPreview]);
-
-  const handleSendMessage = (e: React.FormEvent) => {
-    e.preventDefault();
-    const outgoing = chatMessage.trim();
-    if (!outgoing) return;
-
-    setChatLogs(prev => [...prev, { sender: 'parent' as const, text: outgoing, time: 'Just now' }]);
-    setChatMessage('');
-
-    // Simulate smart teacher reply after 1.5 seconds
-    const timer = window.setTimeout(() => {
-      setChatLogs(prev => [
-        ...prev,
-        {
-          sender: 'teacher',
-          text: `Thank you for your inquiry regarding ${activeStudent?.name || 'your child'}. I have received your message and will review their latest academic logs. Let us discuss this further in detail during our next progress review this Monday!`,
-          time: 'Just now'
-        }
-      ]);
-      replyTimers.current = replyTimers.current.filter(id => id !== timer);
-    }, 1500);
-    replyTimers.current.push(timer);
-  };
 
   const handlePrint = () => {
     window.print();
@@ -789,49 +807,58 @@ export default function ParentPortal({
             </div>
           </div>
 
-          {/* Secure Messaging Simulator (Consult Advisor) */}
-          <div className="bg-white border border-slate-100 rounded-2xl shadow-sm overflow-hidden flex flex-col h-80">
-            <div className="bg-navy-700/10 px-4 py-3 border-b border-slate-100 flex items-center space-x-2">
-              <MessageSquare className="w-4 h-4 text-navy-700" />
-              <h4 className="text-xs font-bold text-slate-700">Consult Class Advisor</h4>
-              {/* Green pulse = universal "online now" convention, kept distinct from brand color */}
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse ml-auto" />
+          {/* Message a teacher — real thread, live delivery */}
+          <div className="bg-white border border-slate-100 rounded-2xl shadow-sm overflow-hidden flex flex-col h-96">
+            <div className="bg-navy-700/10 px-4 py-3 border-b border-slate-100 space-y-2 shrink-0">
+              <div className="flex items-center space-x-2">
+                <MessageSquare className="w-4 h-4 text-navy-700" />
+                <h4 className="text-xs font-bold text-slate-700">Message a Teacher</h4>
+                {conversationId && (
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse ml-auto" title="Live" />
+                )}
+              </div>
+              {teacherContacts.length > 1 && (
+                <select
+                  value={selectedTeacherId}
+                  onChange={(e) => setSelectedTeacherId(e.target.value)}
+                  aria-label="Choose a teacher"
+                  className="w-full text-xs p-2 rounded-lg border border-slate-200 bg-white focus:outline-none"
+                >
+                  {teacherContacts.map((c) => (
+                    <option key={c.teacherId} value={c.teacherId}>
+                      {c.fullName}{c.teachingSubject ? ` — ${c.teachingSubject}` : c.teachingClass ? ` — ${c.teachingClass}` : ''}
+                    </option>
+                  ))}
+                </select>
+              )}
+              {teacherContacts.length === 1 && selectedTeacher && (
+                <p className="text-[10px] text-slate-500">
+                  {selectedTeacher.fullName}
+                  {selectedTeacher.teachingSubject ? ` — ${selectedTeacher.teachingSubject}` : selectedTeacher.teachingClass ? ` — ${selectedTeacher.teachingClass}` : ''}
+                </p>
+              )}
             </div>
 
-            {/* Chat Body */}
-            <div className="flex-1 p-4 overflow-y-auto space-y-3 text-xs">
-              {chatLogs.map((log, idx) => (
-                <div key={idx} className={`flex flex-col ${log.sender === 'parent' ? 'items-end' : 'items-start'}`}>
-                  <div className={`p-2.5 rounded-xl max-w-[85%] leading-relaxed ${
-                    log.sender === 'parent'
-                      ? 'bg-navy-700 text-white rounded-br-none'
-                      : 'bg-slate-100 text-slate-700 rounded-bl-none border border-slate-200/50'
-                  }`}>
-                    {log.text}
-                  </div>
-                  <span className="text-[9px] text-slate-400 mt-1 font-mono font-light shrink-0">
-                    {log.time}
-                  </span>
-                </div>
-              ))}
+            <div className="flex-1 min-h-0">
+              {contactsLoading ? (
+                <p className="text-xs text-slate-400 italic p-6 text-center">Loading your child's teachers…</p>
+              ) : conversationError ? (
+                <p className="text-xs text-rose-600 p-6 text-center">{conversationError}</p>
+              ) : teacherContacts.length === 0 ? (
+                <p className="text-xs text-slate-400 italic p-6 text-center">
+                  No teachers are assigned to {activeStudent.name} yet — check back once the school office sets that up.
+                </p>
+              ) : (
+                <ChatThread
+                  conversationId={conversationId}
+                  role="parent"
+                  fetchMessages={onFetchMessages}
+                  sendMessage={(id, body) => onSendMessage(id, body)}
+                  subscribeMessages={onSubscribeMessages}
+                  placeholder={selectedTeacher ? `Message ${selectedTeacher.fullName}…` : 'Write a message…'}
+                />
+              )}
             </div>
-
-            {/* Chat Input */}
-            <form onSubmit={handleSendMessage} className="p-2 border-t border-slate-100 bg-slate-50 flex gap-1 items-center">
-              <input
-                type="text"
-                value={chatMessage}
-                onChange={(e) => setChatMessage(e.target.value)}
-                placeholder="Ask teacher Beaumont a question..."
-                className="flex-1 text-xs px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-navy-500 bg-white"
-              />
-              <button
-                type="submit"
-                className="p-2 bg-navy-700 hover:bg-navy-600 text-white rounded-xl transition-all"
-              >
-                <Send className="w-3.5 h-3.5" />
-              </button>
-            </form>
           </div>
 
         </div>

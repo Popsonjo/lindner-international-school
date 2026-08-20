@@ -540,3 +540,141 @@ create policy "avatar_delete_own_or_admin"
       )
     )
   );
+
+-- ---------------------------------------------------------------------------
+-- Parent <-> teacher messaging. A conversation is one (student, teacher)
+-- pair — e.g. a parent messaging their child's Chemistry teacher is a
+-- separate thread from messaging that same child's class teacher. Admin can
+-- read every thread (school-office oversight); only the parent and the
+-- teacher in a thread can post to it.
+-- ---------------------------------------------------------------------------
+create table if not exists public.conversations (
+  id uuid primary key default gen_random_uuid(),
+  student_id uuid not null references public.students(id) on delete cascade,
+  teacher_id uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  unique (student_id, teacher_id)
+);
+
+alter table public.conversations enable row level security;
+
+create table if not exists public.messages (
+  id uuid primary key default gen_random_uuid(),
+  conversation_id uuid not null references public.conversations(id) on delete cascade,
+  sender_id uuid not null references auth.users(id) on delete cascade,
+  sender_role text not null check (sender_role in ('parent', 'teacher')),
+  body text not null check (char_length(trim(body)) > 0),
+  created_at timestamptz not null default now()
+);
+
+alter table public.messages enable row level security;
+
+-- SECURITY DEFINER so it can check ownership across students/conversations
+-- without those tables' own RLS recursing back into this policy.
+create or replace function public.can_access_conversation(conv_id uuid)
+returns boolean
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select exists (
+    select 1
+    from public.conversations c
+    join public.students s on s.id = c.student_id
+    where c.id = conv_id
+      and (
+        public.current_role() = 'admin'
+        or s.parent_user_id = auth.uid()
+        or c.teacher_id = auth.uid()
+      )
+  );
+$$;
+
+-- A conversation may only be opened between a student's own parent (or an
+-- admin, or the teacher themselves) and a teacher actually assigned to that
+-- student — so a parent can't message staff who don't teach their child.
+create or replace function public.can_create_conversation(p_student_id uuid, p_teacher_id uuid)
+returns boolean
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select exists (
+    select 1 from public.teacher_students ts
+    where ts.student_id = p_student_id and ts.teacher_user_id = p_teacher_id
+  )
+  and (
+    public.current_role() = 'admin'
+    or exists (
+      select 1 from public.students s
+      where s.id = p_student_id and s.parent_user_id = auth.uid()
+    )
+    or p_teacher_id = auth.uid()
+  );
+$$;
+
+-- Lets a parent discover which teachers they're allowed to message for a
+-- given child, without granting them broad read access to `profiles` or
+-- `teacher_students` in general.
+create or replace function public.list_teachers_for_student(p_student_id uuid)
+returns table (teacher_id uuid, full_name text, teaching_subject text, teaching_class text)
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select p.id, p.full_name, p.teaching_subject, p.teaching_class
+  from public.teacher_students ts
+  join public.profiles p on p.id = ts.teacher_user_id
+  where ts.student_id = p_student_id
+    and (
+      public.current_role() = 'admin'
+      or exists (
+        select 1 from public.students s
+        where s.id = p_student_id and s.parent_user_id = auth.uid()
+      )
+      or exists (
+        select 1 from public.teacher_students ts2
+        where ts2.student_id = p_student_id and ts2.teacher_user_id = auth.uid()
+      )
+    );
+$$;
+
+grant execute on function public.list_teachers_for_student(uuid) to authenticated;
+
+drop policy if exists "conversations_select_scoped" on public.conversations;
+create policy "conversations_select_scoped"
+  on public.conversations for select
+  using (public.can_access_conversation(id));
+
+drop policy if exists "conversations_insert_scoped" on public.conversations;
+create policy "conversations_insert_scoped"
+  on public.conversations for insert
+  with check (public.can_create_conversation(student_id, teacher_id));
+
+drop policy if exists "messages_select_scoped" on public.messages;
+create policy "messages_select_scoped"
+  on public.messages for select
+  using (public.can_access_conversation(conversation_id));
+
+drop policy if exists "messages_insert_scoped" on public.messages;
+create policy "messages_insert_scoped"
+  on public.messages for insert
+  with check (
+    sender_id = auth.uid()
+    and sender_role = public.current_role()
+    and public.can_access_conversation(conversation_id)
+  );
+
+-- Live delivery for the chat UI (admin's oversight view stays refresh-based).
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'messages'
+  ) then
+    alter publication supabase_realtime add table public.messages;
+  end if;
+end $$;
